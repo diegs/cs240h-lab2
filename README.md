@@ -1,4 +1,4 @@
-# Stanford CS240h Lab 2
+% Stanford CS240h Lab 2
 
 You will write a basic chat server. It will support any number of
 clients and allow them to join and leave at any time. Please implement
@@ -62,6 +62,14 @@ if it isn't please respond to the client with:
 ```
 server: invalid /join command
 ```
+
+Rooms should function as if they were independent servers. So when a
+user `U` leaves rooms `R1` and joins room `R2`, two things should
+happen:
+
+* All users in R1 should receive a "U has left" message
+* All users in R2 should receive a "U has joined" message
+* U itself should receive receive only the "U has joined" message.
 
 The syntax for messaging is:
 
