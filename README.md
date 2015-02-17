@@ -1,4 +1,4 @@
-% Stanford CS240h Lab 2
+# Stanford CS240h Lab 2
 
 You will write a basic chat server. It will support any number of
 clients and allow them to join and leave at any time. Please implement
