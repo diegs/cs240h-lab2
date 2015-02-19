@@ -2,6 +2,7 @@
 module Chat (chat) where
 
 import Control.Concurrent
+import Control.Concurrent.Chan
 import Control.Exception
 import Network
 import System.Environment
@@ -15,23 +16,28 @@ getPort = do
         Nothing  -> 1617
   return (PortNumber port)
 
-talk :: Handle -> IO ()
-talk h = do
-  hPutStrLn h "Hi there, what's your name?"
-  talk h
-  -- name <- hGetLine h
-  -- hPutStrLn h $ "What's up, " ++ name
-  -- hClose h
+broadcast :: String -> IO ()
+broadcast message = return ()
 
-loop :: Socket -> IO ()
-loop s = do
-  (h, _, _) <- accept s
-  forkIO $ finally (talk h) (hClose h)
-  loop s
+commandline :: Handle -> IO ()
+commandline h = do
+  message <- hGetLine h
+  broadcast message
+  commandline h
+
+chatter :: Handle -> Chan -> IO ()
+chatter h chan = do
+  forkIO $ commandline h
+  chatter h
 
 -- | Chat server entry point.
 chat :: IO ()
 chat = do
   portNumber <- getPort
-  bracket (listenOn portNumber) sClose $ \s -> do
-    loop s
+  chan <- newChan
+  bracket (listenOn portNumber) sClose $ \s -> do $ loop s
+where loop s chan = do
+  (h, _, _) <- accept s
+  forkIO $ finally (chatter h chan) (hClose h)
+  loop s chan
+
