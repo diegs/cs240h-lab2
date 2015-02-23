@@ -1,12 +1,12 @@
--- | CS240h Lab 2 Chat Server
 module Chat (chat) where
 
 import Control.Concurrent
-import Control.Concurrent.Chan
 import Control.Exception
 import Network
 import System.Environment
 import System.IO
+
+data Msg = Msg Int String
 
 getPort :: IO PortID
 getPort = do
@@ -16,28 +16,46 @@ getPort = do
         Nothing  -> 1617
   return (PortNumber port)
 
-broadcast :: String -> IO ()
-broadcast message = return ()
+broadcast :: Chan Msg -> Int -> String -> IO ()
+broadcast chan name msg = do
+  writeChan chan (Msg name msg)
 
-commandline :: Handle -> IO ()
-commandline h = do
+commandline :: Handle -> Chan Msg -> Int -> IO ()
+commandline h chan name = do
   message <- hGetLine h
-  broadcast message
-  commandline h
+  broadcast chan name $ (show name) ++ ": " ++ message
+  commandline h chan name
 
-chatter :: Handle -> Chan -> IO ()
-chatter h chan = do
-  forkIO $ commandline h
-  chatter h
+broadcaster :: Handle -> Chan Msg -> Int -> IO ()
+broadcaster h chan myName = do
+  (Msg name msg) <- readChan chan
+  if name /= myName then hPutStrLn h msg else return ()
+  broadcaster h chan myName
 
--- | Chat server entry point.
+chatStart :: Handle -> Chan Msg -> Int -> IO ()
+chatStart h chan name = do
+  broadcast chan name $ (show name) ++ " has joined."
+  tid <- myThreadId
+  _ <- ($) forkIO $ finally (broadcaster h chan name) (killThread tid)
+  commandline h chan name
+
+chatEnd :: Handle -> Chan Msg -> Int -> IO ()
+chatEnd h chan name = do
+  broadcast chan name $ (show name) ++ " has left."
+  hClose h
+
+loop :: Chan Msg -> MVar Int -> Socket -> IO ()
+loop chan names s = do
+  (h, _, _) <- accept s
+  name <- modifyMVar names (\a -> return (a + 1, a))
+  chan' <- dupChan chan
+  _ <- ($) forkIO $ finally (chatStart h chan' name) (chatEnd h chan name)
+  loop chan names s
+
 chat :: IO ()
 chat = do
   portNumber <- getPort
   chan <- newChan
-  bracket (listenOn portNumber) sClose $ \s -> do $ loop s
-where loop s chan = do
-  (h, _, _) <- accept s
-  forkIO $ finally (chatter h chan) (hClose h)
-  loop s chan
+  names <- newMVar 0
+  bracket (listenOn portNumber) sClose (loop chan names)
 
