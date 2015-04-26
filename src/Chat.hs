@@ -2,11 +2,13 @@ module Chat (chat) where
 
 import Control.Concurrent
 import Control.Exception
+import Control.Monad
 import Network
 import System.Environment
 import System.IO
 
-data Msg = Msg Int String
+type Name = Int
+data Msg = Msg Name String deriving Show
 
 getPort :: IO PortID
 getPort = do
@@ -16,40 +18,39 @@ getPort = do
         Nothing  -> 1617
   return (PortNumber port)
 
-broadcast :: Chan Msg -> Int -> String -> IO ()
-broadcast chan name msg = do
-  writeChan chan (Msg name msg)
+sendMessage :: Chan Msg -> Name -> String -> IO ()
+sendMessage chan name msg = writeChan chan (Msg name msg)
 
-commandline :: Handle -> Chan Msg -> Int -> IO ()
-commandline h chan name = do
+messageSender :: Handle -> Chan Msg -> Name -> IO ()
+messageSender h chan name = do
   message <- hGetLine h
-  broadcast chan name $ (show name) ++ ": " ++ message
-  commandline h chan name
+  sendMessage chan name $ show name ++ ": " ++ message
+  messageSender h chan name
 
-broadcaster :: Handle -> Chan Msg -> Int -> IO ()
-broadcaster h chan myName = do
+messageListener :: Handle -> Chan Msg -> Name -> IO ()
+messageListener h chan myName = do
   (Msg name msg) <- readChan chan
-  if name /= myName then hPutStrLn h msg else return ()
-  broadcaster h chan myName
+  when (name /= myName) $ hPutStrLn h msg
+  messageListener h chan myName
 
-chatStart :: Handle -> Chan Msg -> Int -> IO ()
+chatStart :: Handle -> Chan Msg -> Name -> IO ()
 chatStart h chan name = do
-  broadcast chan name $ (show name) ++ " has joined."
+  sendMessage chan name $ show name ++ " has joined."
   tid <- myThreadId
-  _ <- ($) forkIO $ finally (broadcaster h chan name) (killThread tid)
-  commandline h chan name
+  _ <- ($) forkIO $ finally (messageListener h chan name) (killThread tid)
+  messageSender h chan name
 
-chatEnd :: Handle -> Chan Msg -> Int -> IO ()
+chatEnd :: Handle -> Chan Msg -> Name -> IO ()
 chatEnd h chan name = do
-  broadcast chan name $ (show name) ++ " has left."
+  sendMessage chan name $ show name ++ " has left."
   hClose h
 
-loop :: Chan Msg -> MVar Int -> Socket -> IO ()
+loop :: Chan Msg -> MVar Name -> Socket -> IO ()
 loop chan names s = do
   (h, _, _) <- accept s
   name <- modifyMVar names (\a -> return (a + 1, a))
   chan' <- dupChan chan
-  _ <- ($) forkIO $ finally (chatStart h chan' name) (chatEnd h chan name)
+  _ <- ($) forkIO $ finally (chatStart h chan' name) (chatEnd h chan' name)
   loop chan names s
 
 chat :: IO ()
